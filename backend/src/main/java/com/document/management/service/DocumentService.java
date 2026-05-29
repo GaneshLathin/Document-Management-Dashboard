@@ -10,6 +10,7 @@ import com.document.management.repository.DocumentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -26,6 +27,8 @@ public class DocumentService {
     private final DocumentRepository documentRepository;
     private final AmazonS3 amazonS3;
     private final BackgroundProcessor backgroundProcessor;
+    private final NotificationService notificationService;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @Value("${aws.bucketName}")
     private String bucketName;
@@ -78,13 +81,22 @@ public class DocumentService {
             // Fetch S3 URL
             String s3Url = amazonS3.getUrl(bucketName, s3Key).toString();
 
-            // Step 3: Update DB to completed upload
+            // Step 3: Update DB to completed upload and store state immediately (No OCR / Indexing)
             document.setUploadStatus(UploadStatus.COMPLETED);
+            document.setProcessingStatus(ProcessingStatus.COMPLETED);
+            document.setProcessedAt(java.time.LocalDateTime.now());
             document.setS3Url(s3Url);
             document = documentRepository.save(document);
 
-            // Step 4: Launch async background document processing
-            backgroundProcessor.processDocument(document.getId());
+            // Step 4: Save persistent upload success notification
+            try {
+                notificationService.createNotification("Document '" + document.getName() + "' successfully uploaded and securely stored.", "success");
+            } catch (Exception ex) {
+                log.error("Failed to create success notification", ex);
+            }
+
+            // Step 5: Broadcast immediately to WebSockets
+            messagingTemplate.convertAndSend("/topic/documents", document);
 
             return document;
 
@@ -93,6 +105,14 @@ public class DocumentService {
             document.setUploadStatus(UploadStatus.FAILED);
             document.setProcessingStatus(ProcessingStatus.FAILED);
             documentRepository.save(document);
+            
+            // Log a failed upload notification to database
+            try {
+                notificationService.createNotification("Failed to upload document: " + originalFilename + " to cloud storage.", "failed");
+            } catch (Exception ex) {
+                log.error("Failed to create failed notification", ex);
+            }
+            
             throw new IOException("Failed to store file in cloud storage", e);
         }
     }

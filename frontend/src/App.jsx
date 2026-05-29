@@ -7,6 +7,7 @@ import UploadZone from './components/UploadZone';
 import UploadList from './components/UploadList';
 import DocumentTable from './components/DocumentTable';
 import ToastContainer from './components/Toast';
+import NotificationPanel from './components/NotificationPanel';
 
 export default function App() {
   const [documents, setDocuments] = useState([]);
@@ -16,6 +17,11 @@ export default function App() {
   const [selectedPdf, setSelectedPdf] = useState(null);
   const [connected, setConnected] = useState(false);
   const [activeBatches, setActiveBatches] = useState({});
+  
+  // Notification Center States
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   const stompClientRef = useRef(null);
 
@@ -40,9 +46,45 @@ export default function App() {
     }
   };
 
+  // Fetch initial notifications list
+  const fetchNotifications = async () => {
+    try {
+      const response = await axios.get('http://localhost:8080/api/notifications');
+      setNotifications(response.data);
+      setUnreadCount(response.data.filter(n => !n.read).length);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+    }
+  };
+
+  // Mark individual notification as read
+  const handleMarkAsRead = async (id) => {
+    try {
+      await axios.put(`http://localhost:8080/api/notifications/${id}/read`);
+      setNotifications(prev =>
+        prev.map(n => n.id === id ? { ...n, read: true } : n)
+      );
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
+  };
+
+  // Mark all notifications as read
+  const handleMarkAllAsRead = async () => {
+    try {
+      await axios.put('http://localhost:8080/api/notifications/read-all');
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      setUnreadCount(0);
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+    }
+  };
+
   // Establish real-time WebSocket connection using SockJS and STOMP
   useEffect(() => {
     fetchDocuments();
+    fetchNotifications();
 
     const client = new Client({
       webSocketFactory: () => new SockJS('http://localhost:8080/ws'),
@@ -133,10 +175,17 @@ export default function App() {
               // Once ALL files in the bulk batch are processed, notify!
               if (nextPending === 0) {
                 const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                
+                // Save persistent bulk completion notification in database
+                axios.post('http://localhost:8080/api/notifications', {
+                  message: `Bulk upload completed: ${batch.totalFiles - nextFailed} of ${batch.totalFiles} files processed successfully.`,
+                  type: nextFailed === batch.totalFiles ? 'failed' : 'success'
+                }).catch(err => console.error("Failed to store bulk completion notification in DB", err));
+
                 addToast(
                   'Processing Complete',
-                  `${batch.totalFiles} files uploaded successfully at ${nowTime}`,
-                  'success',
+                  `${batch.totalFiles - nextFailed} of ${batch.totalFiles} files uploaded successfully at ${nowTime}`,
+                  nextFailed === batch.totalFiles ? 'failed' : 'success',
                   10000 // 10s prominence
                 );
 
@@ -159,6 +208,23 @@ export default function App() {
               'success'
             );
           }
+        }
+      });
+
+      // Subscribe to real-time system notifications
+      client.subscribe('/topic/notifications', (message) => {
+        const newNotif = JSON.parse(message.body);
+        console.log('Received WebSocket notification:', newNotif);
+
+        // Prepend new notification to state list
+        setNotifications(prev => {
+          if (prev.some(n => n.id === newNotif.id)) return prev;
+          return [newNotif, ...prev];
+        });
+
+        // Increment unread count badge
+        if (!newNotif.read) {
+          setUnreadCount(prev => prev + 1);
         }
       });
     };
@@ -254,7 +320,7 @@ export default function App() {
         }
       })
       .then(response => {
-        // Backend successfully uploaded file and started processing
+        // Backend successfully uploaded file
         const savedDoc = response.data;
         console.log('File upload response:', savedDoc);
 
@@ -264,16 +330,10 @@ export default function App() {
             ...prev,
             [uploadId]: {
               ...prev[uploadId],
-              status: 'processing',
+              status: 'completed',
               progress: 100
             }
           };
-        });
-
-        // Add to main grid immediately in PROCESSING state
-        setDocuments(prevDocs => {
-          if (prevDocs.some(d => d.id === savedDoc.id)) return prevDocs;
-          return [savedDoc, ...prevDocs];
         });
       })
       .catch(err => {
@@ -301,6 +361,13 @@ export default function App() {
 
             if (nextPending === 0) {
               const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              
+              // Save persistent bulk completion notification with failures in database
+              axios.post('http://localhost:8080/api/notifications', {
+                message: `Bulk upload completed: ${batch.totalFiles - nextFailed} of ${batch.totalFiles} files processed successfully.`,
+                type: nextFailed === batch.totalFiles ? 'failed' : 'success'
+              }).catch(err => console.error("Failed to store bulk completion notification in DB", err));
+
               addToast(
                 'Processing Complete',
                 `${batch.totalFiles - nextFailed} of ${batch.totalFiles} files uploaded successfully at ${nowTime}`,
@@ -323,6 +390,10 @@ export default function App() {
           });
         } else {
           addToast('Upload Failed', `Could not upload "${file.name}" to cloud storage.`, 'failed');
+          axios.post('http://localhost:8080/api/notifications', {
+            message: `Upload failed: Could not upload "${file.name}" to cloud storage.`,
+            type: 'failed'
+          }).catch(err => console.error("Failed to store individual upload failure in DB", err));
         }
       });
     });
@@ -388,6 +459,30 @@ export default function App() {
           <div>
             <h1 className="dashboard-title">Document Management</h1>
             <p className="dashboard-subtitle">Upload, secure, and process enterprise files in real time.</p>
+          </div>
+
+          <div className="notification-container">
+            <button 
+              className="bell-btn" 
+              onClick={() => setShowNotifications(prev => !prev)}
+              title="Toggle notifications"
+            >
+              <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+              </svg>
+              {unreadCount > 0 && (
+                <span className="bell-badge">{unreadCount}</span>
+              )}
+            </button>
+
+            {showNotifications && (
+              <NotificationPanel
+                notifications={notifications}
+                onMarkRead={handleMarkAsRead}
+                onMarkAllRead={handleMarkAllAsRead}
+                onClose={() => setShowNotifications(false)}
+              />
+            )}
           </div>
         </header>
 

@@ -18,6 +18,7 @@ public class BackgroundProcessor {
 
     private final DocumentRepository documentRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final NotificationService notificationService;
 
     @Async
     public void processDocument(Long documentId) {
@@ -50,6 +51,13 @@ public class BackgroundProcessor {
             
             log.info("Finished background processing for document: {}", document.getName());
             
+            // Create a success notification in database
+            try {
+                notificationService.createNotification("Document '" + document.getName() + "' processed and securely indexed.", "success");
+            } catch (Exception ex) {
+                log.error("Failed to create success notification", ex);
+            }
+
             // Notify frontend of success
             messagingTemplate.convertAndSend("/topic/documents", document);
             
@@ -60,6 +68,14 @@ public class BackgroundProcessor {
                 if (document != null) {
                     document.setProcessingStatus(ProcessingStatus.FAILED);
                     document = documentRepository.save(document);
+                    
+                    // Create failed notification
+                    try {
+                        notificationService.createNotification("Document '" + document.getName() + "' processing failed.", "failed");
+                    } catch (Exception ex) {
+                        log.error("Failed to create failed notification", ex);
+                    }
+                    
                     messagingTemplate.convertAndSend("/topic/documents", document);
                 }
             } catch (Exception ex) {
@@ -73,6 +89,14 @@ public class BackgroundProcessor {
                 if (document != null) {
                     document.setProcessingStatus(ProcessingStatus.FAILED);
                     document = documentRepository.save(document);
+                    
+                    // Create failed notification
+                    try {
+                        notificationService.createNotification("Document '" + document.getName() + "' processing failed.", "failed");
+                    } catch (Exception ex) {
+                        log.error("Failed to create failed notification", ex);
+                    }
+                    
                     messagingTemplate.convertAndSend("/topic/documents", document);
                 }
             } catch (Exception ex) {

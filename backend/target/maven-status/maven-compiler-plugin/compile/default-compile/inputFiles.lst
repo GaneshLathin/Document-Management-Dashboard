@@ -2,9 +2,13 @@ d:\DocumentManagement\backend\src\main\java\com\document\management\controller\D
 d:\DocumentManagement\backend\src\main\java\com\document\management\model\UploadStatus.java
 d:\DocumentManagement\backend\src\main\java\com\document\management\model\Document.java
 d:\DocumentManagement\backend\src\main\java\com\document\management\config\S3Config.java
-d:\DocumentManagement\backend\src\main\java\com\document\management\config\WebSocketConfig.java
 d:\DocumentManagement\backend\src\main\java\com\document\management\service\BackgroundProcessor.java
+d:\DocumentManagement\backend\src\main\java\com\document\management\model\Notification.java
+d:\DocumentManagement\backend\src\main\java\com\document\management\repository\DocumentRepository.java
+d:\DocumentManagement\backend\src\main\java\com\document\management\repository\NotificationRepository.java
+d:\DocumentManagement\backend\src\main\java\com\document\management\config\WebSocketConfig.java
+d:\DocumentManagement\backend\src\main\java\com\document\management\service\NotificationService.java
 d:\DocumentManagement\backend\src\main\java\com\document\management\service\DocumentService.java
 d:\DocumentManagement\backend\src\main\java\com\document\management\DocumentManagementApplication.java
 d:\DocumentManagement\backend\src\main\java\com\document\management\model\ProcessingStatus.java
-d:\DocumentManagement\backend\src\main\java\com\document\management\repository\DocumentRepository.java
+d:\DocumentManagement\backend\src\main\java\com\document\management\controller\NotificationController.java

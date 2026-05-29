@@ -88,7 +88,7 @@ export default function DocumentTable({ documents, onView, onDelete, searchQuery
                       )}
                       {isCompleted && (
                         <span className="status-indicator completed">
-                          <span className="status-dot"></span> Securely Indexed
+                          <span className="status-dot"></span> Securely Stored
                         </span>
                       )}
                       {isFailed && (
